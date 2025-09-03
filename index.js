@@ -11,14 +11,18 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const DERIVED_BUCKET = "photos-derived";
 
+// Define multiple sizes
+const SIZES = [
+  { name: "small", width: 360 },
+  { name: "medium", width: 800 },
+  { name: "large", width: 1200 },
+];
+
 app.post("/generate-thumbnails", async (req, res) => {
   try {
     const { bucket, file } = req.body;
-if (!bucket || !file) return res.status(400).json({ error: "Missing bucket/file" });
-const path = file; // keep the rest of the code using `path`
+    if (!bucket || !file) return res.status(400).json({ error: "Missing bucket/file" });
 
-
-    // Normalize path
     const normalizedPath = file.replace(/^\/+/, "");
 
     // Download original
@@ -26,19 +30,35 @@ const path = file; // keep the rest of the code using `path`
     if (error || !data) throw error;
     const buffer = Buffer.from(await data.arrayBuffer());
 
-    // Generate thumbnail
-    const thumb = await sharp(buffer).resize({ width: 360 }).toBuffer();
+    const generatedPaths = [];
 
-    // Upload thumbnail
-    const thumbPath = `thumb/${normalizedPath}`;
-    const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(thumbPath, thumb, {
-      contentType: "image/jpeg",
-      upsert: true,
+    // Generate multiple sizes
+    for (const size of SIZES) {
+      const resizedBuffer = await sharp(buffer)
+        .resize({ width: size.width })
+        .toBuffer();
+
+      const uploadPath = `${size.name}/${normalizedPath}`; // e.g., "small/test.jpg"
+
+      const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+
+      if (uploadRes.error) {
+        console.error(`Upload error for ${uploadPath}:`, uploadRes.error);
+        continue; // continue with other sizes even if one fails
+      }
+
+      generatedPaths.push(uploadPath);
+      console.log(`Generated ${uploadPath}`);
+    }
+
+    res.json({
+      ok: true,
+      message: "Thumbnails created",
+      generated: generatedPaths,
     });
-
-    if (uploadRes.error) throw uploadRes.error;
-
-    res.json({ ok: true, message: "Thumbnail created", path: thumbPath });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: err.message });
