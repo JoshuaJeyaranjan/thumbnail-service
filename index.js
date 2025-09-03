@@ -1,9 +1,16 @@
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
+import cors from 'cors';
 
 const app = express();
 app.use(express.json());
+app.use(cors({
+    origin: 'http://localhost:5173', // your frontend
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type'],
+  }));
+  
 
 const supabaseUrl = process.env.PROJECT_URL;
 const supabaseKey = process.env.SERVICE_ROLE_KEY;
