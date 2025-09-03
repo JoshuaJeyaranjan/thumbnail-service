@@ -18,6 +18,13 @@ const SIZES = [
   { name: "large", width: 1200 },
 ];
 
+// Define formats to generate
+const FORMATS = [
+  { ext: "jpg", options: {} },
+  { ext: "webp", options: { quality: 80 } },
+  { ext: "avif", options: { quality: 50 } },
+];
+
 app.post("/generate-thumbnails", async (req, res) => {
   try {
     const { bucket, file } = req.body;
@@ -32,31 +39,46 @@ app.post("/generate-thumbnails", async (req, res) => {
 
     const generatedPaths = [];
 
-    // Generate multiple sizes
+    // Loop through sizes
     for (const size of SIZES) {
-      const resizedBuffer = await sharp(buffer)
-        .resize({ width: size.width })
-        .toBuffer();
+      // Loop through formats
+      for (const fmt of FORMATS) {
+        const transformer = sharp(buffer).resize({ width: size.width });
 
-      const uploadPath = `${size.name}/${normalizedPath}`; // e.g., "small/test.jpg"
+        // Apply format
+        let resizedBuffer;
+        switch (fmt.ext) {
+          case "webp":
+            resizedBuffer = await transformer.webp(fmt.options).toBuffer();
+            break;
+          case "avif":
+            resizedBuffer = await transformer.avif(fmt.options).toBuffer();
+            break;
+          default:
+            resizedBuffer = await transformer.jpeg(fmt.options).toBuffer();
+        }
 
-      const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
-        contentType: "image/jpeg",
-        upsert: true,
-      });
+        const uploadPath = `${size.name}/${normalizedPath.replace(/\.[^/.]+$/, "")}.${fmt.ext}`;
 
-      if (uploadRes.error) {
-        console.error(`Upload error for ${uploadPath}:`, uploadRes.error);
-        continue; // continue with other sizes even if one fails
+        const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
+          contentType:
+            fmt.ext === "webp" ? "image/webp" : fmt.ext === "avif" ? "image/avif" : "image/jpeg",
+          upsert: true,
+        });
+
+        if (uploadRes.error) {
+          console.error(`Upload error for ${uploadPath}:`, uploadRes.error);
+          continue; // continue with other sizes/formats even if one fails
+        }
+
+        generatedPaths.push(uploadPath);
+        console.log(`Generated ${uploadPath}`);
       }
-
-      generatedPaths.push(uploadPath);
-      console.log(`Generated ${uploadPath}`);
     }
 
     res.json({
       ok: true,
-      message: "Thumbnails created",
+      message: "Thumbnails created in multiple sizes and formats",
       generated: generatedPaths,
     });
   } catch (err) {
