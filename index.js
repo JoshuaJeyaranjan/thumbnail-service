@@ -1,39 +1,38 @@
+// index.js (thumbnail service)
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
-import cors from 'cors';
+import cors from "cors";
 
 const app = express();
 app.use(express.json());
-app.use(cors({
-  origin: "http://localhost:5173",        // or an array of allowed origins
+
+// CORS config - allow Authorization header (used by your client)
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGIN || "http://localhost:5173",
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   exposedHeaders: ["Content-Length", "X-Request-Id"],
-  credentials: true, // if you want to allow cookies / credentialed requests
-  preflightContinue: false,
+  credentials: true,
   optionsSuccessStatus: 204,
-  }));
-  
-  app.options("/*", (req, res) => {
-    res.sendStatus(204);
-  });
+};
 
+app.use(cors(corsOptions));
+// register global OPTIONS handler using wildcard pattern that path-to-regexp accepts
+app.options("*", cors(corsOptions)); // enable preflight for all routes
 
 const supabaseUrl = process.env.PROJECT_URL;
-const supabaseKey = process.env.SERVICE_ROLE_KEY;
+const supabaseKey = process.env.SERVICE_ROLE_KEY; // must be stored as secret on Render
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const DERIVED_BUCKET = "photos-derived";
 
-// Define multiple sizes
 const SIZES = [
   { name: "small", width: 360 },
   { name: "medium", width: 800 },
   { name: "large", width: 1200 },
 ];
 
-// Define formats to generate
 const FORMATS = [
   { ext: "jpg", options: {} },
   { ext: "webp", options: { quality: 80 } },
@@ -54,13 +53,10 @@ app.post("/generate-thumbnails", async (req, res) => {
 
     const generatedPaths = [];
 
-    // Loop through sizes
     for (const size of SIZES) {
-      // Loop through formats
       for (const fmt of FORMATS) {
         const transformer = sharp(buffer).resize({ width: size.width });
 
-        // Apply format
         let resizedBuffer;
         switch (fmt.ext) {
           case "webp":
@@ -83,7 +79,7 @@ app.post("/generate-thumbnails", async (req, res) => {
 
         if (uploadRes.error) {
           console.error(`Upload error for ${uploadPath}:`, uploadRes.error);
-          continue; // continue with other sizes/formats even if one fails
+          continue;
         }
 
         generatedPaths.push(uploadPath);
