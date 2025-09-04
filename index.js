@@ -1,4 +1,4 @@
-// index.js (thumbnail service)
+// index.js
 import express from "express";
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
@@ -17,22 +17,17 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
+// IMPORTANT: use the cors middleware globally; do NOT register string '*' or '/*' with app.options
 app.use(cors(corsOptions));
-// register global OPTIONS handler using wildcard pattern that path-to-regexp accepts
-app.options("*", cors(corsOptions)); // enable preflight for all routes
+
+// (do not call app.options('*', ...) or app.options('/*', ...) — these are the cause of the crash)
 
 const supabaseUrl = process.env.PROJECT_URL;
-const supabaseKey = process.env.SERVICE_ROLE_KEY; // must be stored as secret on Render
+const supabaseKey = process.env.SERVICE_ROLE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const DERIVED_BUCKET = "photos-derived";
-
-const SIZES = [
-  { name: "small", width: 360 },
-  { name: "medium", width: 800 },
-  { name: "large", width: 1200 },
-];
-
+const SIZES = [{ name: "small", width: 360 }, { name: "medium", width: 800 }, { name: "large", width: 1200 }];
 const FORMATS = [
   { ext: "jpg", options: {} },
   { ext: "webp", options: { quality: 80 } },
@@ -45,53 +40,33 @@ app.post("/generate-thumbnails", async (req, res) => {
     if (!bucket || !file) return res.status(400).json({ error: "Missing bucket/file" });
 
     const normalizedPath = file.replace(/^\/+/, "");
-
-    // Download original
     const { data, error } = await supabase.storage.from(bucket).download(normalizedPath);
     if (error || !data) throw error;
     const buffer = Buffer.from(await data.arrayBuffer());
 
     const generatedPaths = [];
-
     for (const size of SIZES) {
       for (const fmt of FORMATS) {
         const transformer = sharp(buffer).resize({ width: size.width });
-
         let resizedBuffer;
-        switch (fmt.ext) {
-          case "webp":
-            resizedBuffer = await transformer.webp(fmt.options).toBuffer();
-            break;
-          case "avif":
-            resizedBuffer = await transformer.avif(fmt.options).toBuffer();
-            break;
-          default:
-            resizedBuffer = await transformer.jpeg(fmt.options).toBuffer();
-        }
+        if (fmt.ext === "webp") resizedBuffer = await transformer.webp(fmt.options).toBuffer();
+        else if (fmt.ext === "avif") resizedBuffer = await transformer.avif(fmt.options).toBuffer();
+        else resizedBuffer = await transformer.jpeg(fmt.options).toBuffer();
 
         const uploadPath = `${size.name}/${normalizedPath.replace(/\.[^/.]+$/, "")}.${fmt.ext}`;
-
         const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
-          contentType:
-            fmt.ext === "webp" ? "image/webp" : fmt.ext === "avif" ? "image/avif" : "image/jpeg",
+          contentType: fmt.ext === "webp" ? "image/webp" : fmt.ext === "avif" ? "image/avif" : "image/jpeg",
           upsert: true,
         });
-
         if (uploadRes.error) {
-          console.error(`Upload error for ${uploadPath}:`, uploadRes.error);
+          console.error("Upload error:", uploadRes.error);
           continue;
         }
-
         generatedPaths.push(uploadPath);
-        console.log(`Generated ${uploadPath}`);
       }
     }
 
-    res.json({
-      ok: true,
-      message: "Thumbnails created in multiple sizes and formats",
-      generated: generatedPaths,
-    });
+    res.json({ ok: true, message: "Thumbnails created", generated: generatedPaths });
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: err.message });
