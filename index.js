@@ -6,11 +6,19 @@ import cors from 'cors';
 const app = express();
 app.use(express.json());
 app.use(cors({
-    origin: 'http://localhost:5173', // your frontend
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type'],
+  origin: "http://localhost:5173",        // or an array of allowed origins
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  exposedHeaders: ["Content-Length", "X-Request-Id"],
+  credentials: true, // if you want to allow cookies / credentialed requests
+  preflightContinue: false,
+  optionsSuccessStatus: 204,
   }));
   
+  app.options("/*", (req, res) => {
+    res.sendStatus(204);
+  });
+
 
 const supabaseUrl = process.env.PROJECT_URL;
 const supabaseKey = process.env.SERVICE_ROLE_KEY;
