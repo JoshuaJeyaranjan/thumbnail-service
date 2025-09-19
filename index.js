@@ -20,7 +20,7 @@ const corsOptions = {
 // IMPORTANT: use the cors middleware globally; do NOT register string '*' or '/*' with app.options
 app.use(cors(corsOptions));
 
-// (do not call app.options('*', ...) or app.options('/*', ...) — these are the cause of the crash)
+// (do not call app.options('*', ...) or app.options('/*', ...) — these are the cause of 4the crash)
 
 const supabaseUrl = process.env.PROJECT_URL;
 const supabaseKey = process.env.SERVICE_ROLE_KEY;
@@ -29,7 +29,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const DERIVED_BUCKET = "photos-derived";
 const SIZES = [{ name: "small", width: 360 }, { name: "medium", width: 800 }, { name: "large", width: 1200 }];
 const FORMATS = [
-  { ext: "jpg", options: {} },
+  
   { ext: "webp", options: { quality: 80 } },
   { ext: "avif", options: { quality: 50 } },
 ];
