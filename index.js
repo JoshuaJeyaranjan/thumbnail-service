@@ -44,8 +44,10 @@ app.post("/generate-thumbnails", async (req, res) => {
     if (error || !data) throw error;
     const buffer = Buffer.from(await data.arrayBuffer());
 
-    const generatedPaths = [];
+    const generatedPaths = {};
+
     for (const size of SIZES) {
+      generatedPaths[size.name] = {};
       for (const fmt of FORMATS) {
         const transformer = sharp(buffer).resize({ width: size.width });
         let resizedBuffer;
@@ -54,19 +56,30 @@ app.post("/generate-thumbnails", async (req, res) => {
         else resizedBuffer = await transformer.jpeg(fmt.options).toBuffer();
 
         const uploadPath = `${size.name}/${normalizedPath.replace(/\.[^/.]+$/, "")}.${fmt.ext}`;
-        const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
-          contentType: fmt.ext === "webp" ? "image/webp" : fmt.ext === "avif" ? "image/avif" : "image/jpeg",
-          upsert: true,
-        });
+        const uploadRes = await supabase.storage
+          .from(DERIVED_BUCKET)
+          .upload(uploadPath, resizedBuffer, {
+            contentType:
+              fmt.ext === "webp"
+                ? "image/webp"
+                : fmt.ext === "avif"
+                ? "image/avif"
+                : "image/jpeg",
+            upsert: true,
+          });
+
         if (uploadRes.error) {
-          console.error("Upload error:", uploadRes.error);
+          console.error("Thumbnail upload error:", uploadRes.error);
           continue;
         }
-        generatedPaths.push(uploadPath);
+
+        generatedPaths[size.name][fmt.ext] = uploadPath;
       }
     }
 
-    res.json({ ok: true, message: "Thumbnails created", generated: generatedPaths });
+    // Return structured paths for DB insertion
+    res.json({ ok: true, generatedPaths });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ ok: false, error: err.message });
