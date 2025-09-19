@@ -46,36 +46,28 @@ app.post("/generate-thumbnails", async (req, res) => {
 
     const generatedPaths = {};
 
-    for (const size of SIZES) {
-      generatedPaths[size.name] = {};
-      for (const fmt of FORMATS) {
-        const transformer = sharp(buffer).resize({ width: size.width });
-        let resizedBuffer;
-        if (fmt.ext === "webp") resizedBuffer = await transformer.webp(fmt.options).toBuffer();
-        else if (fmt.ext === "avif") resizedBuffer = await transformer.avif(fmt.options).toBuffer();
-        else resizedBuffer = await transformer.jpeg(fmt.options).toBuffer();
+for (const size of SIZES) {
+  generatedPaths[size.name] = {};
+  for (const fmt of FORMATS) {
+    try {
+      const transformer = sharp(buffer).resize({ width: size.width });
+      const resizedBuffer =
+        fmt.ext === "webp"
+          ? await transformer.webp(fmt.options).toBuffer()
+          : await transformer.avif(fmt.options).toBuffer();
 
-        const uploadPath = `${size.name}/${normalizedPath.replace(/\.[^/.]+$/, "")}.${fmt.ext}`;
-        const uploadRes = await supabase.storage
-          .from(DERIVED_BUCKET)
-          .upload(uploadPath, resizedBuffer, {
-            contentType:
-              fmt.ext === "webp"
-                ? "image/webp"
-                : fmt.ext === "avif"
-                ? "image/avif"
-                : "image/jpeg",
-            upsert: true,
-          });
+      const uploadPath = `${size.name}/${normalizedPath.replace(/\.[^/.]+$/, "")}.${fmt.ext}`;
+      const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, { contentType: `image/${fmt.ext}`, upsert: true });
 
-        if (uploadRes.error) {
-          console.error("Thumbnail upload error:", uploadRes.error);
-          continue;
-        }
+      if (uploadRes.error) throw uploadRes.error;
 
-        generatedPaths[size.name][fmt.ext] = uploadPath;
-      }
+      generatedPaths[size.name][fmt.ext] = uploadPath;
+    } catch (err) {
+      console.error(`Failed to generate/upload ${size.name}/${fmt.ext} for ${file}:`, err);
+      generatedPaths[size.name][fmt.ext] = null; // mark as failed
     }
+  }
+}
 
     // Return structured paths for DB insertion
     res.json({ ok: true, generatedPaths });
