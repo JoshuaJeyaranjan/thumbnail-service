@@ -81,42 +81,41 @@ app.post("/generate-thumbnails", async (req, res) => {
 });
 
 // ---------------- DELETE JOB ----------------
-app.delete("/delete-job", async (req, res) => {
+app.post("/delete-job", async (req, res) => {
   try {
-    const { job } = req.body;
-    if (!job) return res.status(400).json({ ok: false, error: "Missing job data" });
+    const { path, derived_paths } = req.body;
+    if (!path) return res.status(400).json({ ok: false, error: "Missing original path" });
 
-    // 1️⃣ Delete derived images
-    if (job.derived_paths) {
-      for (const size in job.derived_paths) {
-        for (const fmt in job.derived_paths[size]) {
-          const fullPath = job.derived_paths[size][fmt];
-          if (fullPath) {
-            const { error } = await supabase.storage.from(DERIVED_BUCKET).remove([fullPath]);
-            if (error) console.warn(`[DELETE] Failed to remove derived ${fullPath}:`, error);
-          }
+    // ---------------- Delete original file ----------------
+    const { error: origErr } = await supabase
+      .storage
+      .from("photos-original")
+      .remove([path]);
+
+    if (origErr) console.error("Failed to delete original:", origErr);
+
+    // ---------------- Delete derived files ----------------
+    if (derived_paths) {
+      for (const size in derived_paths) {
+        for (const fmt in derived_paths[size]) {
+          const fullPath = derived_paths[size][fmt];
+          if (!fullPath) continue;
+          const { error: derivedErr } = await supabase
+            .storage
+            .from("photos-derived")
+            .remove([fullPath]);
+          if (derivedErr) console.error(`Failed to delete derived ${fullPath}:`, derivedErr);
         }
       }
     }
 
-    // 2️⃣ Delete original image
-    if (job.path) {
-      const { error } = await supabase.storage.from(ORIGINAL_BUCKET).remove([job.path]);
-      if (error) console.warn(`[DELETE] Failed to remove original ${job.path}:`, error);
-    }
-
-    // 3️⃣ Delete DB row
-    if (job.id) {
-      const { error } = await supabase.from("images").delete().eq("id", job.id);
-      if (error) console.warn("[DELETE] Failed to remove DB row:", error);
-    }
-
     res.json({ ok: true });
   } catch (err) {
-    console.error("[DELETE] Error deleting job:", err);
+    console.error("Delete job error:", err);
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Thumbnail service running on port ${PORT}`));
