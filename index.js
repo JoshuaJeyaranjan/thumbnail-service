@@ -8,7 +8,7 @@ app.use(express.json());
 
 // CORS config - allow Authorization header (used by your client)
 const corsOptions = {
-  origin: process.env.ALLOWED_ORIGIN || "http://localhost:5173",
+  origin: ["http://localhost:5173", "https://demetriose.netlify.app", 'https://dfsvision.ca', 'https://dfsvision.com' ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "Accept"],
   exposedHeaders: ["Content-Length", "X-Request-Id"],
