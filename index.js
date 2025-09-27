@@ -20,14 +20,17 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
-app.use(cors());
+app.use(cors(corsOptions));
 
 const supabaseUrl = process.env.PROJECT_URL;
 const supabaseKey = process.env.SERVICE_ROLE_KEY;
+
 console.log("[SERVER] Supabase URL:", supabaseUrl ? supabaseUrl : "MISSING");
 console.log("[SERVER] Supabase Key:", supabaseKey ? "SET" : "MISSING");
 
+// Define both normal and admin clients
 const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseAdmin = createClient(supabaseUrl, supabaseKey); // service role client
 
 const DERIVED_BUCKET = "photos-derived";
 const ORIGINAL_BUCKET = "photos-original";
@@ -46,21 +49,11 @@ const FORMATS = [
 app.post("/generate-thumbnails", async (req, res) => {
   try {
     const { bucket, file } = req.body;
-    console.log("[THUMBNAILS] Request received:", { bucket, file });
-
-    if (!bucket || !file) {
-      console.warn("[THUMBNAILS] Missing bucket or file in request");
-      return res.status(400).json({ error: "Missing bucket/file" });
-    }
+    if (!bucket || !file) return res.status(400).json({ error: "Missing bucket/file" });
 
     const normalizedPath = file.replace(/^\/+/, "");
-    console.log("[THUMBNAILS] Normalized path:", normalizedPath);
-
     const { data, error } = await supabase.storage.from(bucket).download(normalizedPath);
-    if (error || !data) {
-      console.error("[THUMBNAILS] Error downloading original:", error);
-      throw error;
-    }
+    if (error || !data) throw error;
 
     const buffer = Buffer.from(await data.arrayBuffer());
     const generatedPaths = {};
@@ -76,8 +69,7 @@ app.post("/generate-thumbnails", async (req, res) => {
               : await transformer.avif(fmt.options).toBuffer();
 
           const uploadPath = `${size.name}/${normalizedPath.replace(/\.[^/.]+$/, "")}.${fmt.ext}`;
-          console.log(`[THUMBNAILS] Uploading ${uploadPath}`);
-          const uploadRes = await supabase.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
+          const uploadRes = await supabaseAdmin.storage.from(DERIVED_BUCKET).upload(uploadPath, resizedBuffer, {
             contentType: `image/${fmt.ext}`,
             upsert: true,
           });
@@ -85,61 +77,46 @@ app.post("/generate-thumbnails", async (req, res) => {
           if (uploadRes.error) throw uploadRes.error;
           generatedPaths[size.name][fmt.ext] = uploadPath;
         } catch (err) {
-          console.error(`[THUMBNAILS] Failed to generate/upload ${size.name}/${fmt.ext} for ${file}:`, err);
+          console.error(`[THUMBNAILS] Failed ${size.name}/${fmt.ext}:`, err);
           generatedPaths[size.name][fmt.ext] = null;
         }
       }
     }
 
-    console.log("[THUMBNAILS] Generated paths:", generatedPaths);
     res.json({ ok: true, generatedPaths });
   } catch (err) {
-    console.error("[THUMBNAILS] Internal server error:", err);
+    console.error("[THUMBNAILS] Error:", err);
     res.status(500).json({ ok: false, error: err?.message || "Unknown error" });
   }
 });
 
-// UPLOAD URL
+// ---------------- GENERATE UPLOAD URL ----------------
 app.post("/generate-upload-url", async (req, res) => {
   const { fileName } = req.body;
-
   if (!fileName) return res.status(400).json({ error: "Missing fileName" });
 
   try {
-    // Supabase Storage REST endpoint for signed URL
-    const url = `https://${process.env.SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/sign/photos-original/${fileName}`;
-    
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        apikey: process.env.SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${process.env.SERVICE_ROLE_KEY}`,
-      },
-    });
+    const { data, error } = await supabaseAdmin.storage
+      .from(ORIGINAL_BUCKET)
+      .createSignedUploadUrl(fileName, 60); // 60 seconds
 
-    if (!response.ok) {
-      const text = await response.text();
-      console.error("[SERVER] Failed to generate signed URL:", text);
-      throw new Error(`Signed URL request failed: ${response.status}`);
-    }
+    if (error) throw error;
 
-    const data = await response.json();
-    res.json({ uploadUrl: data.signedURL });
+    res.json({ uploadUrl: data.signedUrl });
   } catch (err) {
-    console.error("[SERVER] generate-upload-url error:", err);
+    console.error("[UPLOAD URL] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
+
 // ---------------- DELETE JOB ----------------
 app.post("/delete-job", async (req, res) => {
   try {
     const { path, derived_paths } = req.body;
-    console.log("[DELETE JOB] Request received:", { path, derived_paths });
-
     if (!path) return res.status(400).json({ ok: false, error: "Missing original path" });
 
     // Delete original file
-    const { error: origErr } = await supabase.storage.from(ORIGINAL_BUCKET).remove([path]);
+    const { error: origErr } = await supabaseAdmin.storage.from(ORIGINAL_BUCKET).remove([path]);
     if (origErr) console.error("[DELETE JOB] Failed to delete original:", origErr);
 
     // Delete derived files
@@ -148,7 +125,7 @@ app.post("/delete-job", async (req, res) => {
         for (const fmt in derived_paths[size]) {
           const fullPath = derived_paths[size][fmt];
           if (!fullPath) continue;
-          const { error: derivedErr } = await supabase.storage.from(DERIVED_BUCKET).remove([fullPath]);
+          const { error: derivedErr } = await supabaseAdmin.storage.from(DERIVED_BUCKET).remove([fullPath]);
           if (derivedErr) console.error(`[DELETE JOB] Failed to delete derived ${fullPath}:`, derivedErr);
         }
       }
@@ -156,10 +133,10 @@ app.post("/delete-job", async (req, res) => {
 
     res.json({ ok: true });
   } catch (err) {
-    console.error("[DELETE JOB] Internal server error:", err);
+    console.error("[DELETE JOB] Error:", err);
     res.status(500).json({ ok: false, error: err?.message || "Unknown error" });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[SERVER] Thumbnail service running on port ${PORT}`));;
+app.listen(PORT, () => console.log(`[SERVER] Running on port ${PORT}`));
