@@ -99,6 +99,23 @@ app.post("/generate-thumbnails", async (req, res) => {
   }
 });
 
+// UPLOAD URL
+app.post("/generate-upload-url", async (req, res) => {
+  const { fileName, fileType } = req.body;
+
+  try {
+    const { data, error } = await supabaseAdmin.storage
+      .from("photos-original")
+      .createSignedUploadUrl(fileName, 60); // valid 60 seconds
+
+    if (error) throw error;
+    res.json({ uploadUrl: data.signedUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ---------------- DELETE JOB ----------------
 app.post("/delete-job", async (req, res) => {
   try {
