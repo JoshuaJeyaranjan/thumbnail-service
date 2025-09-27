@@ -101,21 +101,35 @@ app.post("/generate-thumbnails", async (req, res) => {
 
 // UPLOAD URL
 app.post("/generate-upload-url", async (req, res) => {
-  const { fileName, fileType } = req.body;
+  const { fileName } = req.body;
+
+  if (!fileName) return res.status(400).json({ error: "Missing fileName" });
 
   try {
-    const { data, error } = await supabaseAdmin.storage
-      .from("photos-original")
-      .createSignedUploadUrl(fileName, 60); // valid 60 seconds
+    // Supabase Storage REST endpoint for signed URL
+    const url = `https://${process.env.SUPABASE_PROJECT_ID}.supabase.co/storage/v1/object/sign/photos-original/${fileName}`;
+    
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: process.env.SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${process.env.SERVICE_ROLE_KEY}`,
+      },
+    });
 
-    if (error) throw error;
-    res.json({ uploadUrl: data.signedUrl });
+    if (!response.ok) {
+      const text = await response.text();
+      console.error("[SERVER] Failed to generate signed URL:", text);
+      throw new Error(`Signed URL request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.json({ uploadUrl: data.signedURL });
   } catch (err) {
-    console.error(err);
+    console.error("[SERVER] generate-upload-url error:", err);
     res.status(500).json({ error: err.message });
   }
 });
-
 // ---------------- DELETE JOB ----------------
 app.post("/delete-job", async (req, res) => {
   try {
