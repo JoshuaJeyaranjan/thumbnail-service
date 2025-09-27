@@ -20,7 +20,7 @@ const corsOptions = {
   optionsSuccessStatus: 204,
 };
 
-app.use(cors(corsOptions));
+app.use(cors());
 
 const supabaseUrl = process.env.PROJECT_URL;
 const supabaseKey = process.env.SERVICE_ROLE_KEY;
