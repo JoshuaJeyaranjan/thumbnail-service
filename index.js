@@ -93,18 +93,17 @@ app.post("/generate-thumbnails", async (req, res) => {
 // ---------------- GENERATE UPLOAD URL ----------------
 app.post("/generate-upload-url", async (req, res) => {
   const { fileName } = req.body;
-  if (!fileName) return res.status(400).json({ error: "Missing fileName" });
 
   try {
-    const { data, error } = await supabaseAdmin.storage
-      .from(ORIGINAL_BUCKET)
-      .createSignedUploadUrl(fileName, 60); // 60 seconds
+    const { data, error } = await supabase.storage
+      .from("photos-original")
+      .createSignedUploadUrl(fileName, 60); // 60s validity
 
     if (error) throw error;
 
-    res.json({ uploadUrl: data.signedUrl });
+    res.json({ path: fileName, signedUrl: data.signedUrl, token: data.token });
   } catch (err) {
-    console.error("[UPLOAD URL] Error:", err);
+    console.error("[SERVER] generate-upload-url error:", err);
     res.status(500).json({ error: err.message });
   }
 });
