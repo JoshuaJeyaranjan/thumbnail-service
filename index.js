@@ -90,6 +90,49 @@ app.post("/generate-thumbnails", async (req, res) => {
   }
 });
 
+// ---------------- RECORD UPLOAD ----------------
+app.post("/record-upload", async (req, res) => {
+  try {
+    const { path, title, category } = req.body;
+    if (!path || !title) {
+      return res.status(400).json({ ok: false, error: "Missing path or title" });
+    }
+
+    const dbPayload = {
+      title,
+      category,
+      bucket: ORIGINAL_BUCKET,
+      path,
+      uploaded_by: null, // or you can accept a user id if you want
+      derived_paths: {},
+    };
+
+    // Check if it already exists
+    const { data: existing, error: selectErr } = await supabaseAdmin
+      .from("images")
+      .select("id")
+      .eq("path", path)
+      .maybeSingle();
+
+    if (selectErr) throw selectErr;
+
+    if (!existing) {
+      const { error: insertErr } = await supabaseAdmin.from("images").insert([dbPayload]);
+      if (insertErr) throw insertErr;
+      console.log(`[RECORD UPLOAD] Inserted new record for ${path}`);
+    } else {
+      const { error: updateErr } = await supabaseAdmin.from("images").update(dbPayload).eq("id", existing.id);
+      if (updateErr) throw updateErr;
+      console.log(`[RECORD UPLOAD] Updated existing record for ${path}`);
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[RECORD UPLOAD] Error:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ---------------- GENERATE UPLOAD URL ----------------
 app.post("/generate-upload-url", async (req, res) => {
   const { fileName } = req.body;
