@@ -133,6 +133,15 @@ app.post("/record-upload", async (req, res) => {
   }
 });
 
+app.post("/update-derived-paths", async (req, res) => {
+  const { path, derived_paths } = req.body;
+  if (!path || !derived_paths) return res.status(400).json({ ok: false, error: "Missing path or derived_paths" });
+
+  const { error } = await supabaseAdmin.from("images").update({ derived_paths }).eq("path", path);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+
+  res.json({ ok: true });
+});
 // ---------------- GENERATE UPLOAD URL ----------------
 app.post("/generate-upload-url", async (req, res) => {
   const { fileName } = req.body;
